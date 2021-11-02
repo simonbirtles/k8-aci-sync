@@ -3,7 +3,7 @@
 from time import sleep
 import traceback
 from aci_apic.aci_apic import REST_Error, get, has_terminate_flag
-from common.app_helpers import thread_sleep_check, has_terminate_flag
+from common.threading import thread_sleep_check, has_terminate_flag
 from typing import List
 
 

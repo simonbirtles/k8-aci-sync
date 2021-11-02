@@ -16,7 +16,7 @@ from websocket import create_connection, WebSocketException
 import urllib3
 import ssl
 import _thread
-from common.app_helpers import thread_sleep_check, has_terminate_flag, set_terminate_flag
+from common.threading import thread_sleep_check, has_terminate_flag, set_terminate_flag
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
