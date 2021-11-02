@@ -84,7 +84,7 @@ def main():
             pass
 
         if killer.kill_now:
-            print("\nTermninating Application")
+            print("\nTerminating Application")
             # TODO - bring back in after ctrl-c or exception
             # terminate all threads and join
 
@@ -93,10 +93,11 @@ def main():
             #   deployment_watch.join()
             # pod_watch
             # service_watch
-            # apic_watch
-            # refresh subs
-            # print subs
 
+            # apic_watch
+
+            # APIC logout also triggers APIC refresh and
+            # subscriptions related threads to terminate
             apic_logout()
             break
 

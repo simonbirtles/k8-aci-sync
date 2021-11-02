@@ -2,7 +2,8 @@
 """
 from time import sleep
 import traceback
-from aci_apic.aci_apic import REST_Error, get
+from aci_apic.aci_apic import REST_Error, get, has_terminate_flag
+from common.app_helpers import thread_sleep_check, has_terminate_flag
 from typing import List
 
 
@@ -233,8 +234,15 @@ def refresh_subscriptions():
     Dedicated Thread (from login())
     """
     while True:
+
         try:
-            sleep(30)
+            thread_sleep_check(sleep_time=30, terminate_check_func=has_terminate_flag)
+        except Exception as e:
+            print("Terminated refresh_subscriptions thread: {}".format(str(e)))
+            return
+
+        try:
+
             for mo in _managed_objects:
                 dn = "api/subscriptionRefresh"
                 query_filters = {"id": mo.subscription_id}
@@ -294,8 +302,14 @@ def print_subscriptions():
     Dedicated thread (temp debug only)
     """
     while True:
+
         try:
-            sleep(15)
+            thread_sleep_check(sleep_time=15, terminate_check_func=has_terminate_flag)
+        except Exception as e:
+            print("Terminated print_subscriptions thread: {}".format(str(e)))
+            return
+
+        try:
             print("Subscription List")
             print("=" * 190)
             for mo in _managed_objects:

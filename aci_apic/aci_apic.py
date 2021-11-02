@@ -16,6 +16,7 @@ from websocket import create_connection, WebSocketException
 import urllib3
 import ssl
 import _thread
+from common.app_helpers import thread_sleep_check, has_terminate_flag, set_terminate_flag
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -85,7 +86,14 @@ def login_refresh():
     global token_refresh_time
 
     while True:
-        sleep(min(60, int(token_refresh_time) / 2))
+
+        sleep_time = min(60, int(token_refresh_time) / 2)
+        try:
+            thread_sleep_check(sleep_time=sleep_time, terminate_check_func=has_terminate_flag)
+        except Exception as e:
+            print("Terminated login_refresh thread: {}".format(str(e)))
+            return
+
         r = requests.get(
             "https://{}/api/aaaRefresh.json".format(host), cookies=apic_token, verify=False
         )
@@ -127,7 +135,15 @@ def open_websocket():
 
 
 def logout():
+    """
+    '
+    """
     global apic_token
+
+    # Terminate APIC related threads
+    set_terminate_flag()
+
+    # Logout of APIC
     url = "https://{}/api/aaaLogout.json".format(host)
     payload = {"aaaUser": {"attributes": {"name": username}}}
     headers = {"Content-Type": "application/json"}
