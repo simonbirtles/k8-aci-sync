@@ -1,5 +1,6 @@
 """
 """
+from queue import Empty
 import traceback
 from threading import Thread
 from kubernetes import client, watch
@@ -40,12 +41,21 @@ class PodWatcher(Thread):
                 events = self._watcher.stream(
                     self._core_api.list_pod_for_all_namespaces,
                     resource_version=self._resource_version,
+                    timeout_seconds=1,
                 )
                 for event in events:
                     self._outQLock.acquire()
                     self._outQ.put(event)
                     self._outQLock.release()
                     self._resource_version = event["object"].metadata.resource_version
+
+                try:
+                    event = self._inQ.get(block=False)
+                    if event is None:
+                        print("Terminated K8 PodWatcher Thread.")
+                        return
+                except Empty as e:
+                    pass
 
             except exceptions.ApiException:
                 print("K8 Exception: PodWatcher Error: {}".format(str(e)))

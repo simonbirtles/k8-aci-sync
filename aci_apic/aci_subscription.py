@@ -1,11 +1,17 @@
 """
 """
+from queue import Empty
 import traceback
 import json
+from websocket import _exceptions
 from time import sleep
 from queue import Queue
 from threading import Thread, Lock
 from .aci_apic import get_websocket
+
+
+class NormalTerminationError(Exception):
+    ...
 
 
 class APICWatcher(Thread):
@@ -34,19 +40,35 @@ class APICWatcher(Thread):
 
     def run(self):
         """ """
+
+        try:
+            self.event_watcher()
+
+        except NormalTerminationError as e:
+            print("Terminated ACI APICWatcher Thread.")
+            return
+
+        except Exception as e:
+            print("Unhandled error in APIC Subscription Watcher thread: {}".format(str(e)))
+            raise
+
+    def event_watcher(self):
+        """ """
         while True:
+
             try:
                 event = get_websocket().recv()
-                sleep(1)
 
             except Exception as e:
-                # dedicated thread so ensure we send any unhandled
-                # errors to stdout
-                print("Unhandled error in ACI APICWatcher thread: {}".format(str(e)))
-                print(traceback.format_exc())
+                event = self._inQ.get(block=False)
+                if event is None:
+                    # event is none is the event a termination of the
+                    # thread has been requests
+                    raise NormalTerminationError()
 
             if not len(event):
                 continue
+
             self._outQ.put(json.loads(event))
 
     def _log(self, msg):

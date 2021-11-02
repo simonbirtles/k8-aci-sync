@@ -16,6 +16,7 @@ from k8_helpers.k8_sync import sync_deployments, sync_pods, sync_services
 from apic_events.apic_events import process_apic_event
 from aci_apic.aci_apic import login as apic_login  # auto calls APIC login/fresh code
 from aci_apic.aci_apic import logout as apic_logout
+from aci_apic.aci_apic import get_websocket
 from aci_apic.aci_subscription import APICWatcher
 from aci_helpers.aci_object import refresh_subscriptions, print_subscriptions
 
@@ -44,7 +45,7 @@ def main():
     rv_svcs = sync_services()
 
     print("Starting Event Watchers")
-    # in_q not currently used.
+    # in_q is used to push termination event into thread
     # out_q is used to puch recieved events into the watcher thread.
     deployment_in_q = Queue()
     deployment_out_q = Queue()
@@ -70,7 +71,7 @@ def main():
 
     k8_event_q_list = [deployment_out_q, service_out_q, pod_out_q]
 
-    killer = graceful_exit()
+    graceful_exit = GracefulExit()
     while True:
         for k8_event_kind_q in k8_event_q_list:
             try:
@@ -83,29 +84,37 @@ def main():
         except Empty as e:
             pass
 
-        if killer.kill_now:
+        #
+        # TODO: Check Threads Still Alive
+        # ...
+
+        if graceful_exit.quit_now:
             print("\nTerminating Application")
             # TODO - bring back in after ctrl-c or exception
             # terminate all threads and join
 
-            # deployment_watch
-            #   send term event
-            #   deployment_watch.join()
-            # pod_watch
-            # service_watch
-
-            # apic_watch
-
+            deployment_in_q.put(None)
+            pod_in_q.put(None)
+            service_in_q.put(None)
+            # APIC Watcher termination - maybe look at moving to asyncio instead
+            # None is queue to tell thread that whenthe websocket closes, its expected.
+            apic_in_q.put(None)
             # APIC logout also triggers APIC refresh and
             # subscriptions related threads to terminate
             apic_logout()
-            break
+            get_websocket().close()           
+            
+            deployment_watch.join()
+            pod_watch.join()
+            service_watch.join()
+            apic_watch.join()
+            return
 
         sleep(0.5)
 
 
-class graceful_exit:
-    kill_now = False
+class GracefulExit:
+    quit_now = False
 
     def __init__(self):
         self.original_sigint = signal.getsignal(signal.SIGINT)
@@ -114,7 +123,7 @@ class graceful_exit:
 
     def exit_gracefully(self, signum, frame):
         signal.signal(signal.SIGINT, self.original_sigint)
-        self.kill_now = True
+        self.quit_now = True
 
 
 if __name__ == "__main__":
