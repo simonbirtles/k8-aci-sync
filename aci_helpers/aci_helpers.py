@@ -2,7 +2,6 @@
 """
 import re
 from aci_apic.aci_apic import REST_Error, get, post, delete
-
 from exceptions import ManagedObjectNotFoundError
 
 
@@ -64,6 +63,51 @@ def get_eepg(tenant, l3out, eepg, subnet):
     raise ManagedObjectNotFoundError("MO {} not found.")
 
 
+def get_eepg_subnets(tenant, l3out, eepg, managed_only=True):
+    """
+    Returns a l3extInstP (L3Out EEPG) object from the APIC including
+    any children of type l3extSubnet (L3Out EEPG Subnets).
+
+    tenant:str - The fvTenant name
+    l3out:str - The l3out name
+    eepg:str - The l3extInstP name
+    managed_only:bool - Searches only for l3extSubnet with haystack annotation
+
+    Raises:
+    - ManagedObjectNotFoundError
+
+    Returns:dict - l3extInstP as { 'attributes': { ... }, 'children': { 'l3extSubnet': { ... }, ...  } }
+    """
+    params = {"rsp-subtree": "children", "rsp-subtree-class": "l3extSubnet"}
+    if managed_only:
+        params["rsp-subtree-filter"] = 'wcard(l3extSubnet.annotation, "aci-k8-haystack")'
+
+    urlpath = "/api/mo/uni/tn-{}/out-{}/instP-{}".format(tenant, l3out, eepg)
+    data = get(urlpath=urlpath, query_filters=params)
+    if data["totalCount"] == "1":
+        # L3Out / EEPG Exists
+        return data["imdata"][0]["l3extInstP"]
+
+    raise ManagedObjectNotFoundError("MO {} not found.")
+
+
+def get_parent_from_dn(dn):
+    """
+    Returns the parent DN string from a given a DN string
+
+    dn:str /api/mo/uni/tn-TEN_K8_C1/out-L3O_K8_C1/instP-EPG_K8_APP_MCAST1/extsubnet-[172.27.111.253/32]
+    returns:str /api/mo/uni/tn-TEN_K8_C1/out-L3O_K8_C1/instP-EPG_K8_APP_MCAST1/
+    """
+    re_exp = r"^(.*)\/(?![^[]*\])"  # without the trailing /
+    # re_exp  = r"(.*\/)(?![^[]*\])" # with the trailing /
+    _dn = dn if not dn.endswith("/") else dn[:-1]
+    res = re.match(re_exp, _dn)
+    if res is not None and len(res.groups()) > 0:
+        return res.groups()[0]
+    else:
+        raise Exception("DN string is an invalid format or DN has no parent, {}".format(_dn))
+
+
 def create_l3out_epg(tenant_name, l3o_name, epg_name):
     """
     '
@@ -81,11 +125,6 @@ def create_l3out_epg(tenant_name, l3o_name, epg_name):
 
     # TODO: tidy up error handling if totalCount==0 (unlikely senario)
     return data["imdata"][0]["l3extInstP"]
-
-
-def delete_managed_object(dn):
-    """ """
-    delete(dn)
 
 
 def create_eepg_subnet(tenant, l3out, eepg, host_ip, name):
@@ -150,6 +189,11 @@ def create_eepg_subnet(tenant, l3out, eepg, host_ip, name):
     return mo["imdata"][0]["l3extSubnet"]
 
 
+def delete_managed_object(dn):
+    """ """
+    delete(dn)
+
+
 def delete_eepg_subnet(tenant, l3out, eepg, host_ip):
     """
     Deletes the l3extSubnet Managed Object from the APIC.
@@ -162,48 +206,3 @@ def delete_eepg_subnet(tenant, l3out, eepg, host_ip):
     urlpath = "/uni/tn-{}/out-{}/instP-{}/extsubnet-[{}/32]".format(tenant, l3out, eepg, host_ip)
     print("APIC Deleting Subnet: {}".format(urlpath))
     mo = delete(urlpath)
-
-
-def get_eepg_subnets(tenant, l3out, eepg, managed_only=True):
-    """
-    Returns a l3extInstP (L3Out EEPG) object from the APIC including
-    any children of type l3extSubnet (L3Out EEPG Subnets).
-
-    tenant:str - The fvTenant name
-    l3out:str - The l3out name
-    eepg:str - The l3extInstP name
-    managed_only:bool - Searches only for l3extSubnet with haystack annotation
-
-    Raises:
-    - ManagedObjectNotFoundError
-
-    Returns:dict - l3extInstP as { 'attributes': { ... }, 'children': { 'l3extSubnet': { ... }, ...  } }
-    """
-    params_list = ["rsp-subtree=children", "rsp-subtree-class=l3extSubnet"]
-    if managed_only:
-        params_list.append('rsp-subtree-filter=wcard(l3extSubnet.annotation, "aci-k8-haystack")')
-
-    urlpath = "/api/mo/uni/tn-{}/out-{}/instP-{}".format(tenant, l3out, eepg)
-    data = get(urlpath=urlpath, params="&".join(params_list))
-    if data["totalCount"] == "1":
-        # L3Out / EEPG Exists
-        return data["imdata"][0]["l3extInstP"]
-
-    raise ManagedObjectNotFoundError("MO {} not found.")
-
-
-def get_parent_from_dn(dn):
-    """
-    Returns the parent DN string from a given a DN string
-
-    dn:str /api/mo/uni/tn-TEN_K8_C1/out-L3O_K8_C1/instP-EPG_K8_APP_MCAST1/extsubnet-[172.27.111.253/32]
-    returns:str /api/mo/uni/tn-TEN_K8_C1/out-L3O_K8_C1/instP-EPG_K8_APP_MCAST1/
-    """
-    re_exp = r"^(.*)\/(?![^[]*\])"  # without the trailing /
-    # re_exp  = r"(.*\/)(?![^[]*\])" # with the trailing /
-    _dn = dn if not dn.endswith("/") else dn[:-1]
-    res = re.match(re_exp, _dn)
-    if res is not None and len(res.groups()) > 0:
-        return res.groups()[0]
-    else:
-        raise Exception("DN string is an invalid format or DN has no parent, {}".format(_dn))

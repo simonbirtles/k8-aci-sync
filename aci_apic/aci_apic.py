@@ -141,24 +141,60 @@ def logout():
     print("Logged out of APIC")
 
 
-def get(urlpath, params=None):
+def get(urlpath, query_filters=None):
     """
-    HTTP GET - ACI APIC
-    urlpath: e.g. /api/mo/uni/tn-TEN_K8/...
+    ACI GET REST CALL
 
-    returns the full APIC response as json(dict)
+
+    urlpath:str e.g. /api/mo/uni/tn-TEN_K8/...
+    query_filters:dict /
+
+    Example of query_filters dict showing all possible options (each key is optional):
+
+
+    {
+        # Define the scope of a query - {self | children | subtree}
+        "query-target"          : "subtree",
+
+        # Respond-only elements including the specified class - 'class name'
+        "target-subtree-class"  : "fvAEPg",
+
+        # Respond-only elements matching conditions - filter expressions
+        "query-target-filter"   : "",
+
+        # Specifies child object level included in the response - {no | children | full}
+        "rsp-subtree"           : "",
+
+        # Respond only specified classes - 'class name'
+        "rsp-subtree-class"     : "",
+
+        # Respond only classes matching conditions - filter expressions
+        "rsp-subtree-filter"    : "",
+
+        # Request additional objects -{faults | health :stats :…}
+        "rsp-subtree-include"   : "",
+
+        # Sort the response based on the property values - classname.property | {asc | desc}
+        "order-by"              : ""
+
+        # Create a subscription for object events (created, modified, deleted) { yes | no}
+        "subscription"          : ""
+
+        # The ID of an existing subscription to renew
+        "id"                    : int
+    }
+
+    returns:dict the full APIC response as json(dict)
     """
     _urlpath = urlpath if urlpath.startswith("/") else ("/" + urlpath)
-    params_str = ""
-    if params:
-        params_str = "?{}".format(params)
+    params = _format_query_filter(query_filters)
     headers = {"Content-Type": "application/json"}
-    url = "https://{}{}.json{}".format(host, _urlpath, params_str)
+    url = "https://{}{}.json{}".format(host, _urlpath, params)
     r = requests.get(url, headers=headers, cookies=apic_token, verify=False)
 
     if re.fullmatch(r"[345]..", str(r.status_code)):
         raise REST_Error(
-            "APIC REST GET failed with error: {}\n{}".format(r.status_code, r.content),
+            "APIC REST GET failed for {} with error: {}\n{}".format(url, r.status_code, r.content),
             code=r.status_code,
             content=r.content,
         )
@@ -177,41 +213,171 @@ def delete(dn):
     # Returns 200 OK even if the object does not exist.. .but gives a 400
     # if DN url not in right format
     r = requests.delete(url, cookies=apic_token, verify=False)
-    if r.status_code != 200:
-        raise Exception(
-            "DN format incorrect for deletion with DN: {} due to {}".format(dn, r.content)
+    if re.fullmatch(r"[345]..", str(r.status_code)):
+        raise REST_Error(
+            "APIC REST DELETE failed for: {} with error: {}\n{}".format(
+                url, r.status_code, r.content
+            ),
+            code=r.status_code,
+            content=r.content,
         )
     print("Deleted MO with DN: {}".format(_dn))
 
 
-# TODO: clean up options, not a str but dict/str-list and format correctly !
-# take code from tooling orchestrator apic class
-def post(urlpath, payload, options=""):
+def post(urlpath, payload, query_filters=None):
     """
     Returns modified object, full raw json content \
     
+    urlpath:str e.g. /api/mo/uni/tn-TEN_K8/...
+    payload:dict
+    query_filters:dict 
+    
+    Example of query_filters dict showing all possible options (each key is optional):
 
+
+    {
+        # Define the scope of a query - {self | children | subtree}
+        "query-target"          : "subtree",
+
+        # Respond-only elements including the specified class - 'class name'
+        "target-subtree-class"  : "fvAEPg",
+
+        # Respond-only elements matching conditions - filter expressions
+        "query-target-filter"   : "",
+
+        # Specifies child object level included in the response - {no | children | full}
+        "rsp-subtree"           : "",
+
+        # Respond only specified classes - 'class name'
+        "rsp-subtree-class"     : "",
+
+        # Respond only classes matching conditions - filter expressions
+        "rsp-subtree-filter"    : "",
+
+        # Request additional objects -{faults | health :stats :…}
+        "rsp-subtree-include"   : "",
+
+        # Sort the response based on the property values - classname.property | {asc | desc}
+        "order-by"              : ""
+    }
     Raises: 
     
     - REST_Error with for non REST 2xx code with additional attributes 'code' and 'content'
-    
+
     """
     if "api/mo/" not in urlpath and "api/class/" not in urlpath:
-        raise Exception("The urlpath does not have /api/xx prefix. {}".format(urlpath))
+        raise Exception("The urlpath does not have /api/..../ prefix. {}".format(urlpath))
 
     _urlpath = urlpath if urlpath.startswith("/") else ("/" + urlpath)
+
+    _query_filters = query_filters.copy() if query_filters is not None else {}
+    # always return full object not just modified for this
+    # application, does include children as well which is a shame
+    # but we do rely on the full object being returned or its
+    # another call to get the full object.
+    _query_filters["rsp-subtree"] = "full"
+    params = _format_query_filter(_query_filters)
     headers = {"Content-Type": "application/json"}
-    options = "?rsp-subtree=full"
-    url = "https://{}{}.json{}".format(host, _urlpath, options)
+    url = "https://{}{}.json{}".format(host, _urlpath, params)
     r = requests.post(
         url, headers=headers, data=json.dumps(payload), cookies=apic_token, verify=False
     )
-    if r.status_code != 200:
+    if re.fullmatch(r"[345]..", str(r.status_code)):
         raise REST_Error(
-            "APIC REST POST failed with error: {}\n{}".format(r.status_code, r.content),
+            "APIC REST POST failed for {} with error: {}\n{}".format(url, r.status_code, r.content),
             code=r.status_code,
             content=r.content,
         )
 
     data = json.loads(r.content)
     return data
+
+
+def _format_query_filter(query_filters):
+    """
+    build a valid APIC query string from passed dict
+
+    query_filters:dict
+
+    Example of query_filters dict showing all possible options (each key is optional):
+    {
+        # Define the scope of a query - {self | children | subtree}
+        "query-target"          : "subtree",
+
+        # Respond-only elements including the specified class - 'class name'
+        "target-subtree-class"  : "fvAEPg",
+
+        # Respond-only elements matching conditions - filter expressions
+        "query-target-filter"   : "",
+
+        # Specifies child object level included in the response - {no | children | full}
+        "rsp-subtree"           : "",
+
+        # Respond only specified classes - 'class name'
+        "rsp-subtree-class"     : "",
+
+        # Respond only classes matching conditions - filter expressions
+        "rsp-subtree-filter"    : "",
+
+        # Request additional objects -{faults | health :stats :…}
+        "rsp-subtree-include"   : "",
+
+        # Sort the response based on the property values - classname.property | {asc | desc}
+        "order-by"              : ""
+
+        # Create a subscription for object events (created, modified, deleted) { yes | no}
+        "subscription"          : ""
+
+        # The ID of an existing subscription to renew
+        "id"                    : int
+    }
+    """
+    valid_query_filters = [
+        "query-target",
+        "target-subtree-class",
+        "query-target-filter",
+        "rsp-subtree",
+        "rsp-subtree-class",
+        "rsp-subtree-filter",
+        "rsp-subtree-include",
+        "order-by",
+        "rsp-prop-include",
+        "page-size",
+        "subscription",
+        "id",
+    ]
+    query_string = ""
+    if query_filters is None or len(query_filters.keys()) == 0:
+        return query_string
+
+    # check valid query filters
+    try:
+        for filter_key in query_filters.keys():
+            if filter_key not in valid_query_filters:
+                raise KeyError(
+                    (
+                        "ACI APIC REST Query filter parsing error: " "Invalid Query Filter Key: {}"
+                    ).format(filter_key)
+                )
+            if len(str(query_filters[filter_key])) == 0:
+                continue
+            # querystring string quotes MUST be double not single
+            if isinstance(query_filters[filter_key], int):
+                flt = query_filters[filter_key]
+            else:
+                flt = query_filters[filter_key].replace("'", '"')
+            query_string = "&".join(
+                (
+                    query_string,
+                    "{filter_key}={filter_string}".format(filter_key=filter_key, filter_string=flt),
+                )
+            )
+
+    except Exception as e:
+        msg = "ACI APIC REST Query filter parsing error: {}".format(str(e))
+        print(msg)
+        raise Exception(msg)
+
+    # remove leading ampersand
+    query_string = query_string[1:]
+    return "?" + query_string

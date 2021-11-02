@@ -206,9 +206,9 @@ def subscribe(dn, options=""):
     """
     _dn = dn if dn.startswith("/") else ("/" + dn)
     dn = "/api/mo{}".format(_dn)
-    params = "subscription=yes"
+    query_filters = {"subscription": "yes"}
     try:
-        data = get(dn, params)
+        data = get(urlpath=dn, query_filters=query_filters)
     except REST_Error as e:
         msg = "APIC subscribe request failed due to {}".format(e.content)
         print(msg)
@@ -237,9 +237,9 @@ def refresh_subscriptions():
             sleep(30)
             for mo in _managed_objects:
                 dn = "api/subscriptionRefresh"
-                params = "id={}".format(mo.subscription_id)
+                query_filters = {"id": mo.subscription_id}
                 try:
-                    data = get(dn, params)
+                    data = get(urlpath=dn, query_filters=query_filters)
                 except REST_Error as e:
                     if e.code == 400:
                         # Subscription refresh timeout
